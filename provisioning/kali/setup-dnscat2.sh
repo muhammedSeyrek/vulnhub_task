@@ -19,7 +19,8 @@ apt-get install -y \
     libffi-dev \
     screen \
     make \
-    gcc
+    gcc \
+    nmap
 
 echo "[+] dnscat2 deposu klonlanıyor..."
 if [ ! -d /opt/dnscat2 ]; then

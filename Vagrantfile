@@ -189,6 +189,11 @@ Vagrant.configure("2") do |config|
       > /etc/network/interfaces.d/60-default-route
   SHELL
 
+  # Tüm iç ağ makinelerinin DNS'ini bizim DNS sunucusuna sabitleyen script
+  dns_fix_script = <<-SHELL
+    echo "nameserver 192.168.57.2" > /etc/resolv.conf
+  SHELL
+
   # Bu, dosyaları /tmp altına kopyaladıktan sonra doğru yerlerine taşıyıp
   # BIND9'u kuran/başlatan kısa betik. Asıl içerik artık gerçek dosyalarda:
   #   provisioning/int-dns/db.altay.sec
@@ -237,6 +242,7 @@ Vagrant.configure("2") do |config|
 
     # 3) Son olarak default route'u firewall'a çevir (kalıcı).
     dns.vm.provision "shell", inline: internal_routing_script
+    dns.vm.provision "shell", inline: dns_fix_script
   end
 
   config.vm.define "web" do |web|
@@ -248,8 +254,24 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.linked_clone = true
     end
-    web.vm.provision "shell", inline: "apt-get update"
+
+    # 1. Host makinedeki Private Key'i VM'e aktar
+    web.vm.provision "file", source: "provisioning/web/id_rsa_nfs", destination: "/home/vagrant/id_rsa_nfs"
+
+    # 2. Python uygulamasını bilgisayarımızdan Sanal Makineye kopyala
+    web.vm.provision "file", source: "provisioning/web/whois_app.py", destination: "/home/vagrant/whois_app.py"
+
+    # 1. Kurulum ve Zafiyet Yapılandırma Betiğini (bash script) çalıştır
+    web.vm.provision "shell", path: "provisioning/web/setup.sh"
+    
+    # 3. Ortak Ağ Geçidi Scripti (Firewall Yönlendirmesi)
     web.vm.provision "shell", inline: internal_routing_script
+    web.vm.provision "shell", inline: dns_fix_script
+    # -------------------------------------------------------------
+    # C. WEB SERVİSİNİ BAŞLATMA
+    # -------------------------------------------------------------
+    web.vm.provision "shell", inline: "nohup /usr/bin/python3 /home/vagrant/whois_app.py > /home/vagrant/web.log 2>&1 &"
+
   end
 
   config.vm.define "nfs" do |nfs|
@@ -261,8 +283,17 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.linked_clone = true
     end
-    nfs.vm.provision "shell", inline: "apt-get update"
-    nfs.vm.provision "shell", inline: internal_routing_script
-  end
 
+    # 1. Düşük yetkili kullanıcı oluşturma 
+    nfs.vm.provision "shell", inline: "useradd -m -s /bin/bash user"
+    # 2. Host makinedeki Public Key'i VM'e aktar
+    nfs.vm.provision "file", source: "provisioning/nfs/id_rsa_nfs.pub", destination: "/home/vagrant/id_rsa_nfs.pub"
+    # SSH anahtar kurulumu
+    nfs.vm.provision "shell", path: "provisioning/nfs/ssh.sh"
+    # NFS Sunucu kurulumu
+    nfs.vm.provision "shell", path: "provisioning/nfs/nfs-setup.sh"
+    # Firewall Yönlendirmesi
+    nfs.vm.provision "shell", inline: internal_routing_script
+    nfs.vm.provision "shell", inline: dns_fix_script
+  end
 end
