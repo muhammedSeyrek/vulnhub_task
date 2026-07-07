@@ -1,0 +1,15 @@
+options {
+    directory "/var/cache/bind";
+    recursion yes;
+    allow-query { any; };
+    listen-on { any; };
+    dnssec-validation no;
+
+    // "Simüle İnternet": int-dns kendi zone'unda (altay.sec) olmayan
+    // her sorguyu (örn. dnscat2 tünel domaini) burayı gerçek internetmiş
+    // gibi düşünüp c2-dns'e (192.168.56.200) yönlendirir.
+    forwarders {
+        192.168.56.200;
+    };
+    forward only;   // Kendi root/iteratif çözümlemeyi denemesin, sadece forward etsin.
+};

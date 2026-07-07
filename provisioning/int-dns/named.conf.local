@@ -1,0 +1,5 @@
+zone "altay.sec" {
+    type master;
+    file "/etc/bind/db.altay.sec";
+    allow-transfer { any; };  // ZAFIYET: AXFR herkese acik
+};

@@ -35,7 +35,23 @@ Vagrant.configure("2") do |config|
       vb.memory = "1024"
       vb.linked_clone = true
     end
-  end
+      # ==========================================
+      # dnscat2 SUNUCUSU (Saldırganın kendi C2 altyapısı)
+      # ==========================================
+      # generic/debian12 düz Debian olduğu için hiçbir araç hazır gelmiyor.
+      # Kurulumun tamamı gerçek bir script dosyasında:
+      #   provisioning/kali/setup-dnscat2.sh
+      # int-dns/c2-dns'te olduğu gibi: host'taki script /tmp altına
+      # kopyalanıyor, sonra shell provisioner ile çalıştırılıyor.
+      kali.vm.provision "file",
+        source: "provisioning/kali/setup-dnscat2.sh",
+        destination: "/tmp/setup-dnscat2.sh"
+  
+      kali.vm.provision "shell", inline: <<-SHELL
+        chmod +x /tmp/setup-dnscat2.sh
+        /tmp/setup-dnscat2.sh
+      SHELL
+    end
 
   config.vm.define "c2-dns" do |c2|
     c2.vm.hostname = "c2-server"
@@ -46,6 +62,39 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.linked_clone = true
     end
+ 
+    # ==========================================
+    # "SİMÜLE İNTERNET DNS" — sadece yönlendirme yapar
+    # ==========================================
+    # Bu makine gerçek dünyadaki genel internet DNS altyapısını temsil
+    # eder. Kendi başına hiçbir zafiyet ya da C2 barındırmaz; sadece
+    # "altay.insecure" domainine gelen sorguları, o domainin gerçek
+    # sahibine (kali, 192.168.56.100) yönlendirir — tıpkı bir kök/TLD
+    # sunucusunun bir domainin NS kaydına bakıp doğru sunucuya
+    # yönlendirmesi gibi.
+    #
+    # int-dns'te olduğu gibi: config dosyaları host'ta gerçek dosyalar
+    # olarak duruyor (provisioning/c2-dns/), file provisioner ile /tmp
+    # altına kopyalanıp shell provisioner'da /etc/bind altına taşınıyor.
+    c2.vm.provision "file",
+      source: "provisioning/c2-dns/named.conf.local",
+      destination: "/tmp/named.conf.local"
+    c2.vm.provision "file",
+      source: "provisioning/c2-dns/named.conf.options",
+      destination: "/tmp/named.conf.options"
+ 
+    c2.vm.provision "shell", inline: <<-SHELL
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y bind9 bind9utils dnsutils
+ 
+      cp /tmp/named.conf.local    /etc/bind/named.conf.local
+      cp /tmp/named.conf.options  /etc/bind/named.conf.options
+ 
+      named-checkconf
+      systemctl restart named
+      systemctl enable named
+    SHELL
   end
 
   # ==========================================
@@ -140,7 +189,25 @@ Vagrant.configure("2") do |config|
       > /etc/network/interfaces.d/60-default-route
   SHELL
 
-# BIND9 Şirket ağı DNS Sunucusu
+  # Bu, dosyaları /tmp altına kopyaladıktan sonra doğru yerlerine taşıyıp
+  # BIND9'u kuran/başlatan kısa betik. Asıl içerik artık gerçek dosyalarda:
+  #   provisioning/int-dns/db.altay.sec
+  #   provisioning/int-dns/named.conf.local
+  #   provisioning/int-dns/named.conf.options
+  bind9_install_script = <<-SHELL
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y bind9 bind9utils dnsutils
+
+    cp /tmp/db.altay.sec        /etc/bind/db.altay.sec
+    cp /tmp/named.conf.local    /etc/bind/named.conf.local
+    cp /tmp/named.conf.options  /etc/bind/named.conf.options
+
+    named-checkzone altay.sec /etc/bind/db.altay.sec
+    named-checkconf
+    systemctl restart named
+    systemctl enable named 
+  SHELL
 
   config.vm.define "int-dns" do |dns|
     dns.vm.hostname = "int-dns"
@@ -151,11 +218,26 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.linked_clone = true
     end
-    dns.vm.provision "shell", inline: "apt-get update"
+
+    # 1) Host'taki gerçek dosyaları VM'e kopyala (vagrant kullanıcısının
+    #    yazabildiği /tmp altına — /etc/bind'a direkt yazma izni yok).
+    dns.vm.provision "file",
+      source: "provisioning/int-dns/db.altay.sec",
+      destination: "/tmp/db.altay.sec"
+    dns.vm.provision "file",
+      source: "provisioning/int-dns/named.conf.local",
+      destination: "/tmp/named.conf.local"
+    dns.vm.provision "file",
+      source: "provisioning/int-dns/named.conf.options",
+      destination: "/tmp/named.conf.options"
+
+    # 2) BIND9'u kur, dosyaları /etc/bind altına taşı, servisi başlat.
+    #    Internet gerektirdiği için route firewall'a çevrilmeden ÖNCE çalışmalı.
+    dns.vm.provision "shell", inline: bind9_install_script
+
+    # 3) Son olarak default route'u firewall'a çevir (kalıcı).
     dns.vm.provision "shell", inline: internal_routing_script
   end
-
-# Web Makinesi
 
   config.vm.define "web" do |web|
     web.vm.hostname = "web-server"
@@ -169,8 +251,6 @@ Vagrant.configure("2") do |config|
     web.vm.provision "shell", inline: "apt-get update"
     web.vm.provision "shell", inline: internal_routing_script
   end
-
-# NFS Makinesi
 
   config.vm.define "nfs" do |nfs|
     nfs.vm.hostname = "nfs-server"
