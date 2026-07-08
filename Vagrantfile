@@ -214,6 +214,45 @@ Vagrant.configure("2") do |config|
     systemctl enable named 
   SHELL
 
+  # WAZUH AGENT KURULUM BETİĞİ (DNS LOGLARINI OTOMATİK BAĞLAR VE APPARMOR'U AŞAR)
+  wazuh_agent_install_script = <<-SHELL
+    export DEBIAN_FRONTEND=noninteractive
+    echo "Wazuh Agent 4.8.2 Kuruluyor..."
+    curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import
+    chmod 644 /usr/share/keyrings/wazuh.gpg
+    echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
+    apt-get update
+    WAZUH_MANAGER="192.168.57.10" apt-get install -y wazuh-agent=4.8.2-1
+
+    echo "BIND9 Loglari /var/cache/bind/queries.log a yonlendiriliyor..."
+    # Orijinal dosyayi bozmadan sadece log bloğunu sonuna ekliyoruz
+    cat << 'EOF' >> /etc/bind/named.conf.options
+
+logging {
+    channel query_log {
+        file "/var/cache/bind/queries.log" versions 3 size 5m;
+        severity info;
+        print-time yes;
+    };
+    category queries { query_log; };
+};
+EOF
+    systemctl restart named
+    
+    echo "Wazuh ajani log dosyasini okumaya ayarlaniyor..."
+    cat << 'EOF' >> /var/ossec/etc/ossec.conf
+<ossec_config>
+  <localfile>
+    <log_format>syslog</log_format>
+    <location>/var/cache/bind/queries.log</location>
+  </localfile>
+</ossec_config>
+EOF
+    systemctl daemon-reload
+    systemctl enable wazuh-agent
+    systemctl restart wazuh-agent
+  SHELL
+
   config.vm.define "int-dns" do |dns|
     dns.vm.hostname = "int-dns"
     dns.vm.network "private_network",
@@ -240,6 +279,12 @@ Vagrant.configure("2") do |config|
     #    Internet gerektirdiği için route firewall'a çevrilmeden ÖNCE çalışmalı.
     dns.vm.provision "shell", inline: bind9_install_script
 
+    # 3) WAZUH AJANINI KUR VE LOGLARI BAĞLA (YENİ EKLENEN SATIR)
+    dns.vm.provision "shell", inline: wazuh_agent_install_script
+
+    # 4) Son olarak default route'u firewall'a çevir (kalıcı).
+    dns.vm.provision "shell", inline: internal_routing_script
+    # ...
     # 3) Son olarak default route'u firewall'a çevir (kalıcı).
     dns.vm.provision "shell", inline: internal_routing_script
     dns.vm.provision "shell", inline: dns_fix_script
@@ -295,5 +340,56 @@ Vagrant.configure("2") do |config|
     # Firewall Yönlendirmesi
     nfs.vm.provision "shell", inline: internal_routing_script
     nfs.vm.provision "shell", inline: dns_fix_script
+  end
+  # ==========================================
+  # 4. BLUE TEAM - SOC & SIEM MAKİNESİ (KİŞİ 4)
+  # ==========================================
+  config.vm.define "soc" do |soc|
+    soc.vm.hostname = "wazuh-siem"
+    soc.vm.network "private_network", ip: "192.168.57.10", virtualbox__intnet: INT_NET
+    soc.vm.network "forwarded_port", guest: 443, host: 8443
+
+    soc.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.linked_clone = true
+    end
+
+    soc.vm.provision "shell", inline: <<-SHELL
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y curl apt-transport-https unzip wget tar
+      
+      echo "Wazuh Manager Kuruluyor (Bu islem 15-20 dk surebilir, lutfen bekleyin)..."
+      curl -sO https://packages.wazuh.com/4.8/wazuh-install.sh
+      bash ./wazuh-install.sh -a -i > /wazuh-install.log 2>&1
+      
+      echo "Sifreler ayiklaniyor..."
+      grep -A 8 "Password:" /wazuh-install.log > /home/vagrant/wazuh-passwords.txt
+      chown vagrant:vagrant /home/vagrant/wazuh-passwords.txt
+
+      echo "SOC Tehdit Avciligi Kurallari Ekleniyor..."
+      cat << 'EOF' > /var/ossec/etc/rules/local_rules.xml
+<group name="dns_tunneling,">
+  <rule id="100050" level="3">
+    <if_group>syslog</if_group>
+    <match>dnscat|altay.insecure</match>
+    <description>DNS Tunelleme supheli sorgu yakalandi.</description>
+  </rule>
+  <rule id="100051" level="12" frequency="15" timeframe="60">
+    <if_matched_sid>100050</if_matched_sid>
+    <same_source_ip />
+    <description>Kritik Veri Sizintisi Tesebbusu: Ag uzerinde DNS Tunneling (dnscat2) aktivitesi tespit edildi!</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+  </rule>
+</group>
+EOF
+      systemctl restart wazuh-manager
+    SHELL
+
+    soc.vm.provision "shell", inline: internal_routing_script
+    soc.vm.provision "shell", inline: dns_fix_script
   end
 end
