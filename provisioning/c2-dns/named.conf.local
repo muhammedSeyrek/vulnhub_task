@@ -8,4 +8,4 @@ zone "altay.sec" {
     type forward;
     forward only;
     forwarders { 192.168.56.10; }; // Şirketin domainleri firewall'a soruluyor
-}
+};

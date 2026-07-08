@@ -34,7 +34,11 @@ Vagrant.configure("2") do |config|
     kali.vm.provider "virtualbox" do |vb|
       vb.memory = "1024"
       vb.linked_clone = true
+      vb.gui = true                       # VirtualBox penceresini göster
+      vb.customize ["modifyvm", :id, "--vram", "128"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxvga"]
     end
+
       # ==========================================
       # dnscat2 SUNUCUSU (Saldırganın kendi C2 altyapısı)
       # ==========================================
@@ -51,8 +55,7 @@ Vagrant.configure("2") do |config|
         chmod +x /tmp/setup-dnscat2.sh
         /tmp/setup-dnscat2.sh
       SHELL
-    end
-
+  end
   config.vm.define "c2-dns" do |c2|
     c2.vm.hostname = "c2-server"
     c2.vm.network "private_network",
@@ -303,19 +306,23 @@ EOF
     # 1. Host makinedeki Private Key'i VM'e aktar
     web.vm.provision "file", source: "provisioning/web/id_rsa_nfs", destination: "/home/vagrant/id_rsa_nfs"
 
-    # 2. Python uygulamasını bilgisayarımızdan Sanal Makineye kopyala
-    web.vm.provision "file", source: "provisioning/web/whois_app.py", destination: "/home/vagrant/whois_app.py"
-
-    # 1. Kurulum ve Zafiyet Yapılandırma Betiğini (bash script) çalıştır
-    web.vm.provision "shell", path: "provisioning/web/setup.sh"
+    # 2. Nginx + PHP-FPM için config/test dosyalarını /tmp altına kopyala
+    #    (setup.sh içinde doğru dizinlere taşınıyor)
+    web.vm.provision "file", source: "provisioning/web/nginx-site.conf", destination: "/tmp/nginx-site.conf"
+    web.vm.provision "file", source: "provisioning/web/php-fpm-pool.conf", destination: "/tmp/php-fpm-pool.conf"
+    web.vm.provision "file", source: "provisioning/web/index.php", destination: "/tmp/index.php"
     
-    # 3. Ortak Ağ Geçidi Scripti (Firewall Yönlendirmesi)
+    web.vm.provision "file",
+      source: "provisioning/web/shell.php",
+      destination: "/home/vagrant/shell.php"
+    
+      # 3. Kurulum ve Zafiyet Yapılandırma Betiğini (bash script) çalıştır
+    #    (nginx+php-fpm kurulumu da bu script içinde yapılıyor)
+    web.vm.provision "shell", path: "provisioning/web/setup.sh"
+
+    # 4. Ortak Ağ Geçidi Scripti (Firewall Yönlendirmesi)
     web.vm.provision "shell", inline: internal_routing_script
     web.vm.provision "shell", inline: dns_fix_script
-    # -------------------------------------------------------------
-    # C. WEB SERVİSİNİ BAŞLATMA
-    # -------------------------------------------------------------
-    web.vm.provision "shell", inline: "nohup /usr/bin/python3 /home/vagrant/whois_app.py > /home/vagrant/web.log 2>&1 &"
 
   end
 
