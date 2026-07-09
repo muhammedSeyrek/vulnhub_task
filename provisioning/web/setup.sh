@@ -60,7 +60,7 @@ rm -f /etc/nginx/sites-enabled/default
 #     destination: "/home/vagrant/p0wny-shell.php"
 #
 # ve bu script'in sonuna:
-   mv /home/vagrant/shell.php /var/www/html/shell.php
+   cp /vagrant/provisioning/web/shell.php /var/www/html/shell.php
    chown www-data:www-data /var/www/html/shell.php
 # -------------------------------------------------------------
 
