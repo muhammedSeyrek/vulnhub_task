@@ -291,6 +291,16 @@ EOF
     # 3) Son olarak default route'u firewall'a çevir (kalıcı).
     dns.vm.provision "shell", inline: internal_routing_script
     dns.vm.provision "shell", inline: dns_fix_script
+
+    # ==========================================
+    # KİŞİ 3 - ANSIBLE ERİŞİMİ (soc'tan root ile bağlanabilmesi için)
+    # ==========================================
+    dns.vm.provision "shell", inline: <<-SHELL
+      mkdir -p /root/.ssh
+      echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFTvLBVRYP7WIOvfF7q/GLoBC1F5mADCU/aQ+NB4VxrJ ansible-control" >> /root/.ssh/authorized_keys
+      chmod 700 /root/.ssh
+      chmod 600 /root/.ssh/authorized_keys
+    SHELL
   end
 
   config.vm.define "web" do |web|
@@ -321,6 +331,16 @@ EOF
     web.vm.provision "shell", inline: internal_routing_script
     web.vm.provision "shell", inline: dns_fix_script
 
+    # ==========================================
+    # KİŞİ 3 - ANSIBLE ERİŞİMİ (soc'tan root ile bağlanabilmesi için)
+    # ==========================================
+    web.vm.provision "shell", inline: <<-SHELL
+      mkdir -p /root/.ssh
+      echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFTvLBVRYP7WIOvfF7q/GLoBC1F5mADCU/aQ+NB4VxrJ ansible-control" >> /root/.ssh/authorized_keys
+      chmod 700 /root/.ssh
+      chmod 600 /root/.ssh/authorized_keys
+    SHELL
+
   end
 
   config.vm.define "nfs" do |nfs|
@@ -344,6 +364,16 @@ EOF
     # Firewall Yönlendirmesi
     nfs.vm.provision "shell", inline: internal_routing_script
     nfs.vm.provision "shell", inline: dns_fix_script
+
+    # ==========================================
+    # KİŞİ 3 - ANSIBLE ERİŞİMİ (soc'tan root ile bağlanabilmesi için)
+    # ==========================================
+    nfs.vm.provision "shell", inline: <<-SHELL
+      mkdir -p /root/.ssh
+      echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFTvLBVRYP7WIOvfF7q/GLoBC1F5mADCU/aQ+NB4VxrJ ansible-control" >> /root/.ssh/authorized_keys
+      chmod 700 /root/.ssh
+      chmod 600 /root/.ssh/authorized_keys
+    SHELL
   end
   # ==========================================
   # 4. BLUE TEAM - SOC & SIEM MAKİNESİ (KİŞİ 4)
@@ -395,5 +425,29 @@ EOF
 
     soc.vm.provision "shell", inline: internal_routing_script
     soc.vm.provision "shell", inline: dns_fix_script
+
+    # ==========================================
+    # KİŞİ 3 - ANSIBLE KONTROL NODE KURULUMU (soc üzerinde)
+    # ==========================================
+    # Ansible'ı kur, private key + inventory + playbook'u soc'a kopyala.
+    # DİKKAT: Playbook otomatik ÇALIŞTIRILMIYOR — sadece hazır bekliyor.
+    # Kırmızı takım sızıp Kişi 4 alarmı gördüğünde manuel tetiklenecek.
+    soc.vm.provision "file",
+      source: "provisioning/ansible/ansible_control",
+      destination: "/home/vagrant/ansible_control"
+    soc.vm.provision "file",
+      source: "provisioning/ansible/hosts.ini",
+      destination: "/home/vagrant/hosts.ini"
+    soc.vm.provision "file",
+      source: "provisioning/ansible/hardening-playbook.yml",
+      destination: "/home/vagrant/hardening-playbook.yml"
+
+    soc.vm.provision "shell", inline: <<-SHELL
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y ansible
+      chmod 600 /home/vagrant/ansible_control
+      chown vagrant:vagrant /home/vagrant/ansible_control /home/vagrant/hosts.ini /home/vagrant/hardening-playbook.yml
+    SHELL
   end
 end

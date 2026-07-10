@@ -1,0 +1,55 @@
+---
+- name: Web - shell.php sil + gdb capability kaldır
+  hosts: web
+  become: yes
+  tasks:
+    - name: shell.php sil
+      file:
+        path: /var/www/html/shell.php
+        state: absent
+
+    - name: gdb capability kaldır
+      command: setcap -r /usr/bin/gdb
+
+- name: NFS - no_root_squash düzelt
+  hosts: nfs
+  become: yes
+  tasks:
+    - name: exports dosyasını düzelt
+      replace:
+        path: /etc/exports
+        regexp: 'no_root_squash'
+        replace: 'root_squash'
+
+    - name: export tablosunu yenile
+      command: exportfs -ra
+
+    - name: nfs servisini yeniden başlat
+      service:
+        name: nfs-kernel-server
+        state: restarted
+
+- name: int-dns - AXFR kapat + DNSSEC aç
+  hosts: int-dns
+  become: yes
+  tasks:
+    - name: AXFR'ı kapat (allow-transfer any -> none)
+      replace:
+        path: /etc/bind/named.conf.local
+        regexp: 'allow-transfer \{ any; \};'
+        replace: 'allow-transfer { none; };'
+
+    - name: dnssec-validation'ı aç (no -> auto)
+      replace:
+        path: /etc/bind/named.conf.options
+        regexp: 'dnssec-validation no;'
+        replace: 'dnssec-validation auto;'
+
+    - name: config doğrula
+      command: named-checkconf
+      changed_when: false
+
+    - name: bind9 yeniden başlat
+      service:
+        name: named
+        state: restarted

@@ -1,0 +1,2 @@
+.vagrant/
+provisioning/ansible/ansible_control
