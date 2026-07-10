@@ -322,6 +322,10 @@ EOF
     web.vm.provision "file", source: "provisioning/web/php-fpm-pool.conf", destination: "/tmp/php-fpm-pool.conf"
     web.vm.provision "file", source: "provisioning/web/index.php", destination: "/tmp/index.php"
 
+    # p0wny-shell'i nginx sunucusuna doğrudan kopyalama
+    web.vm.provision "file",
+          source: "provisioning/web/shell.php",
+          destination: "/home/vagrant/shell.php"
     
       # 3. Kurulum ve Zafiyet Yapılandırma Betiğini (bash script) çalıştır
     #    (nginx+php-fpm kurulumu da bu script içinde yapılıyor)

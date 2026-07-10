@@ -25,6 +25,8 @@ chown root:root /root/.ssh/id_rsa_nfs*
 # SSH kuralları gereği izinleri sıkılaştır (Private: 600, Public: 644)
 chmod 600 /root/.ssh/id_rsa_nfs
 
+echo "Sistem yöneticisi bu anahtar nfs.altay.sec makinesindeki user kullanıcısına ait..." >> /root/.ssh/BENIOKU
+
 # -------------------------------------------------------------
 # C. NGINX + PHP-FPM KURULUMU
 # -------------------------------------------------------------
@@ -60,7 +62,7 @@ rm -f /etc/nginx/sites-enabled/default
 #     destination: "/home/vagrant/p0wny-shell.php"
 #
 # ve bu script'in sonuna:
-   cp /vagrant/provisioning/web/shell.php /var/www/html/shell.php
+   mv /home/vagrant/shell.php /var/www/html/shell.php
    chown www-data:www-data /var/www/html/shell.php
 # -------------------------------------------------------------
 
