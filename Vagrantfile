@@ -427,9 +427,6 @@ EOF
       systemctl restart wazuh-manager
     SHELL
 
-    soc.vm.provision "shell", inline: internal_routing_script
-    soc.vm.provision "shell", inline: dns_fix_script
-
     # ==========================================
     # KİŞİ 3 - ANSIBLE KONTROL NODE KURULUMU (soc üzerinde)
     # ==========================================
@@ -453,5 +450,8 @@ EOF
       chmod 600 /home/vagrant/ansible_control
       chown vagrant:vagrant /home/vagrant/ansible_control /home/vagrant/hosts.ini /home/vagrant/hardening-playbook.yml
     SHELL
+    # Bütün kurulumlar yapıldıktan sonra makinein internet ile bağlantısını kesme
+    soc.vm.provision "shell", inline: internal_routing_script
+    soc.vm.provision "shell", inline: dns_fix_script
   end
 end
